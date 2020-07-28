@@ -27,6 +27,7 @@ public class ToolExport {
     private File outExcelFile;
     private String project;
     private Map<String, Integer> keysIndex;
+    private Map<String, Boolean> untranslatableMap;
     private PrintStream out;
     private ExportConfig mConfig;
     private Set<String> sAllowedFiles = new HashSet<String>();
@@ -38,11 +39,12 @@ public class ToolExport {
     public ToolExport(PrintStream out) throws ParserConfigurationException {
         DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
         builder = dbf.newDocumentBuilder();
+        this.untranslatableMap = new HashMap<String, Boolean>();
         this.out = out == null ? System.out : out;
     }
 
     public static void run(ExportConfig config) throws SAXException,
-        IOException, ParserConfigurationException {
+            IOException, ParserConfigurationException {
         run(null, config);
     }
 
@@ -143,6 +145,7 @@ public class ToolExport {
         sheet.createRow(rowIndex++);
         createTilte(wb, sheet);
         addLang2Tilte(wb, sheet, "default");
+        addTranslatable(wb, sheet);
         sheet.createFreezePane(1, 1);
 
         FileOutputStream outFile = new FileOutputStream(outExcelFile);
@@ -190,6 +193,41 @@ public class ToolExport {
         HSSFCellStyle commentStyle = wb.createCellStyle();
         commentStyle.setFont(commentFont);
         return commentStyle;
+    }
+
+    private static HSSFCellStyle createSectionCommentStyle(HSSFWorkbook wb) {
+
+        HSSFFont commentFont = wb.createFont();
+        commentFont.setColor(HSSFColor.GREEN.index);
+        commentFont.setItalic(true);
+        commentFont.setFontHeightInPoints((short)12);
+
+        HSSFCellStyle commentStyle = wb.createCellStyle();
+        commentStyle.setFillForegroundColor(HSSFColor.GREEN.LIGHT_GREEN.index);
+        commentStyle.setFillPattern(HSSFCellStyle.SOLID_FOREGROUND);
+        commentStyle.setFont(commentFont);
+        return commentStyle;
+    }
+
+    private static HSSFCellStyle createUntranslatableStyle(HSSFWorkbook wb) {
+        HSSFCellStyle textStyle = wb.createCellStyle();
+        textStyle.setFillForegroundColor(HSSFColor.GREY_25_PERCENT.index);
+        textStyle.setFillPattern(HSSFCellStyle.SOLID_FOREGROUND);
+        textStyle.setAlignment(HSSFCellStyle.ALIGN_CENTER);
+        HSSFFont font = wb.createFont();
+        font.setBoldweight(HSSFFont.BOLDWEIGHT_BOLD);
+        textStyle.setFont(font);
+        return textStyle;
+    }
+
+    private static HSSFCellStyle createStringReferenceStyle(HSSFWorkbook wb) {
+        HSSFCellStyle textStyle = wb.createCellStyle();
+        HSSFFont font = wb.createFont();
+        font.setItalic(true);
+        font.setFontHeightInPoints((short)12);
+        font.setColor(HSSFColor.GREY_40_PERCENT.index);
+        textStyle.setFont(font);
+        return textStyle;
     }
 
     private static HSSFCellStyle createPlurarStyle(HSSFWorkbook wb) {
@@ -244,6 +282,16 @@ public class ToolExport {
         sheet.setColumnWidth(cell.getColumnIndex(), (40 * 256));
     }
 
+    private static void addTranslatable(HSSFWorkbook wb, HSSFSheet sheet) {
+        HSSFRow titleRow = sheet.getRow(0);
+
+        HSSFCell cell = titleRow.createCell(2);
+        cell.setCellStyle(createTilteStyle(wb));
+        cell.setCellValue("Untranslatable");
+
+        sheet.setColumnWidth(cell.getColumnIndex(), (18 * 256));
+    }
+
     private static void addLang2Tilte(HSSFWorkbook wb, HSSFSheet sheet, String lang) {
         HSSFRow titleRow = sheet.getRow(0);
         HSSFCell lastCell = titleRow.getCell((int)titleRow.getLastCellNum() - 1);
@@ -267,10 +315,13 @@ public class ToolExport {
 
         HSSFWorkbook wb = new HSSFWorkbook(new FileInputStream(f));
 
+        HSSFCellStyle sectionCommentStyle = createSectionCommentStyle(wb);
         HSSFCellStyle commentStyle = createCommentStyle(wb);
         HSSFCellStyle plurarStyle = createPlurarStyle(wb);
         HSSFCellStyle keyStyle = createKeyStyle(wb);
         HSSFCellStyle textStyle = createTextStyle(wb);
+        HSSFCellStyle untranslatableStyle = createUntranslatableStyle(wb);
+        HSSFCellStyle stringReferenceStyle = createStringReferenceStyle(wb);
 
         HSSFSheet sheet = wb.getSheet(project);
 
@@ -281,20 +332,21 @@ public class ToolExport {
 
             }
             if (item.getNodeType() == Node.COMMENT_NODE) {
+                String content = item.getTextContent();
+                boolean sectionTitle = content.startsWith("$");
+                content = content.replace("$", "");
                 HSSFRow row = sheet.createRow(rowIndex++);
                 HSSFCell cell = row.createCell(0);
-                cell.setCellValue(String.format("/** %s **/", item.getTextContent()));
-                cell.setCellStyle(commentStyle);
-
+                cell.setCellValue(String.format("/** %s **/", content));
+                cell.setCellStyle(sectionTitle? sectionCommentStyle: commentStyle);
                 sheet.addMergedRegion(new CellRangeAddress(row.getRowNum(), row.getRowNum(), 0, 255));
             }
 
             if ("string".equals(item.getNodeName())) {
-                Node translatable = item.getAttributes().getNamedItem("translatable");
-                if (translatable != null && "false".equals(translatable.getNodeValue())) {
-                    continue;
-                }
+                Node translatableNode = item.getAttributes().getNamedItem("translatable");
+                boolean untranslatable = translatableNode != null && "false".equals(translatableNode.getNodeValue());
                 String key = item.getAttributes().getNamedItem("name").getNodeValue();
+                this.untranslatableMap.put(key, untranslatable);
                 if (mConfig.isIgnoredKey(key)) {
                     continue;
                 }
@@ -307,8 +359,13 @@ public class ToolExport {
                 cell.setCellStyle(keyStyle);
 
                 cell = row.createCell(1);
-                cell.setCellStyle(textStyle);
+                boolean referenced = item.getTextContent().startsWith("@string/");
+                cell.setCellStyle(referenced? stringReferenceStyle: textStyle);
                 cell.setCellValue(item.getTextContent());
+
+                cell = row.createCell(2);
+                cell.setCellStyle(untranslatable? untranslatableStyle: textStyle);
+                cell.setCellValue(untranslatable? "✓": "");
             } else if ("plurals".equals(item.getNodeName())) {
                 String key = item.getAttributes().getNamedItem("name").getNodeValue();
                 if (mConfig.isIgnoredKey(key)) {
@@ -326,6 +383,9 @@ public class ToolExport {
                     Node plurarItem = items.item(j);
                     if ("item".equals(plurarItem.getNodeName())) {
                         String itemKey = plurarName + "#" + plurarItem.getAttributes().getNamedItem("quantity").getNodeValue();
+                        boolean untranslatable = plurarItem.getTextContent().startsWith("@string/");
+                        this.untranslatableMap.put(itemKey, untranslatable);
+
                         keys.put(itemKey, rowIndex);
 
                         HSSFRow itemRow = sheet.createRow(rowIndex++);
@@ -335,8 +395,12 @@ public class ToolExport {
                         itemCell.setCellStyle(keyStyle);
 
                         itemCell = itemRow.createCell(1);
-                        itemCell.setCellStyle(textStyle);
+                        itemCell.setCellStyle(untranslatable? stringReferenceStyle: textStyle);
                         itemCell.setCellValue(plurarItem.getTextContent());
+
+                        itemCell = itemRow.createCell(2);
+                        itemCell.setCellStyle(untranslatable? untranslatableStyle: textStyle);
+                        itemCell.setCellValue(untranslatable? "✓": "");
                     }
                 }
             } else if ("string-array".equals(item.getNodeName())) {
@@ -349,6 +413,8 @@ public class ToolExport {
                     Node arrayItem = arrayItems.item(j);
                     if ("item".equals(arrayItem.getNodeName())) {
                         String itemKey = key + "[" + k++ + "]";
+                        boolean untranslatable = arrayItem.getTextContent().startsWith("@string/");
+                        this.untranslatableMap.put(itemKey, untranslatable);
                         keys.put(itemKey, rowIndex);
 
                         HSSFRow itemRow = sheet.createRow(rowIndex++);
@@ -358,8 +424,12 @@ public class ToolExport {
                         itemCell.setCellStyle(keyStyle);
 
                         itemCell = itemRow.createCell(1);
-                        itemCell.setCellStyle(textStyle);
+                        itemCell.setCellStyle(untranslatable? stringReferenceStyle: textStyle);
                         itemCell.setCellValue(arrayItem.getTextContent());
+
+                        itemCell = itemRow.createCell(2);
+                        itemCell.setCellStyle(untranslatable? untranslatableStyle: textStyle);
+                        itemCell.setCellValue(untranslatable? "✓": "");
                     }
                 }
             }
@@ -457,16 +527,21 @@ public class ToolExport {
         }
 
         HSSFCellStyle missedStyle = createMissedStyle(wb);
-
+        HSSFCellStyle untranstableStyle = createUntranslatableStyle(wb);
         if (!missedKeys.isEmpty()) {
             out.println("  MISSED KEYS:");
         }
         for (String missedKey : missedKeys) {
-            out.println("\t" + missedKey);
+            //out.println("\t" + missedKey);
             Integer index = keysIndex.get(missedKey);
             HSSFRow row = sheet.getRow(index);
             HSSFCell cell = row.createCell((int)row.getLastCellNum());
             cell.setCellStyle(missedStyle);
+            boolean untranslatable = this.untranslatableMap.get(missedKey) != null && this.untranslatableMap.get(missedKey);
+            if (!untranslatable) {
+                out.println("\t" + missedKey);
+            }
+            cell.setCellStyle(untranslatable? untranstableStyle: missedStyle);
         }
 
         FileOutputStream outStream = new FileOutputStream(f);

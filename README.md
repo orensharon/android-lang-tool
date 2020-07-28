@@ -1,5 +1,12 @@
 android-lang-tool
 =================
+Clone of [deltaaskii/android-lang-tool](https://github.com/deltaaskii/android-lang-tool)
+
+Added:
+* Untranslatable column with check mark
+* Referenced string styling (also untranslatable)
+* Section headers
+* More styling
 
 Clone of [TomasKypta/android-lang-tool](https://github.com/TomasKypta/android-lang-tool)
 
