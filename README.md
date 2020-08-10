@@ -3,6 +3,7 @@ android-lang-tool
 Clone of [deltaaskii/android-lang-tool](https://github.com/deltaaskii/android-lang-tool)
 
 Added:
+* Each string xml file presented in separated sheet (named by file name)
 * Untranslatable column with check mark
 * Referenced string styling (also untranslatable)
 * Section headers

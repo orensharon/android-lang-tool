@@ -26,7 +26,7 @@ public class ToolExport {
     private DocumentBuilder builder;
     private File outExcelFile;
     private String project;
-    private Map<String, Integer> keysIndex;
+    private Map<String, Map<String, Integer>> fileKeys;
     private Map<String, Boolean> untranslatableMap;
     private PrintStream out;
     private ExportConfig mConfig;
@@ -85,17 +85,16 @@ public class ToolExport {
             System.err.println("Cannot find resource directory.");
             return;
         }
-
+        this.fileKeys = new HashMap<String, Map<String, Integer>>();
         for (File dir : res.listFiles()) {
             if (!dir.isDirectory() || !dir.getName().startsWith(DIR_VALUES)) {
                 continue;
             }
             if (dir.getName().equals(DIR_VALUES)) {
-                keysIndex = exportDefLang(dir);
+                exportDefLang(dir);
                 break;
             }
         }
-
         for (File dir : res.listFiles()) {
             if (!dir.isDirectory() || !dir.getName().startsWith(DIR_VALUES)) {
                 continue;
@@ -131,37 +130,37 @@ public class ToolExport {
             if (!stringFile.exists()) {
                 continue;
             }
+            Map<String, Integer> keysIndex = this.fileKeys.get(fileName);
             exportLangToExcel(project, lang, stringFile, getStrings(stringFile), outExcelFile, keysIndex);
         }
     }
 
-    private Map<String, Integer> exportDefLang(File valueDir) throws IOException, SAXException {
-        Map<String, Integer> keys = new HashMap<String, Integer>();
+    private void exportDefLang(File valueDir) throws IOException, SAXException {
         HSSFWorkbook wb = new HSSFWorkbook();
-
-        HSSFSheet sheet;
-        sheet = wb.createSheet(project);
-        int rowIndex = 0;
-        sheet.createRow(rowIndex++);
-        createTilte(wb, sheet);
-        addLang2Tilte(wb, sheet, "default");
-        addTranslatable(wb, sheet);
-        sheet.createFreezePane(1, 1);
-
-        FileOutputStream outFile = new FileOutputStream(outExcelFile);
-        wb.write(outFile);
-        outFile.close();
-
         for (String fileName : sAllowedFiles) {
+            Map<String, Integer> keys = new HashMap<String, Integer>();
+            FileOutputStream outFile = new FileOutputStream(outExcelFile);
+            HSSFSheet sheet;
+            sheet = wb.createSheet(fileName);
+            sheet.createRow(0);
+            createTilte(wb, sheet);
+            addLang2Tilte(wb, sheet, "default");
+            addTranslatable(wb, sheet);
+            sheet.createFreezePane(1, 1);
+            wb.write(outFile);
+            outFile.close();
+            if (this.fileKeys.get(fileName) == null) {
+                this.fileKeys.put(fileName, keys);
+            }
+        }
+        for (String fileName : sAllowedFiles) {
+            Map<String, Integer> keys = this.fileKeys.get(fileName);
             File stringFile = new File(valueDir, fileName);
             if (!stringFile.exists()) {
                 continue;
             }
-            keys.putAll(exportDefLangToExcel(rowIndex, project, stringFile, getStrings(stringFile), outExcelFile));
+            keys.putAll(exportDefLangToExcel(1, project, stringFile, getStrings(stringFile), outExcelFile));
         }
-
-
-        return keys;
     }
 
     private NodeList getStrings(File f) throws SAXException, IOException {
@@ -323,7 +322,7 @@ public class ToolExport {
         HSSFCellStyle untranslatableStyle = createUntranslatableStyle(wb);
         HSSFCellStyle stringReferenceStyle = createStringReferenceStyle(wb);
 
-        HSSFSheet sheet = wb.getSheet(project);
+        HSSFSheet sheet = wb.getSheet(src.getName());
 
 
         for (int i = 0; i < strings.getLength(); i++) {
@@ -452,7 +451,7 @@ public class ToolExport {
 
         HSSFCellStyle textStyle = createTextStyle(wb);
 
-        HSSFSheet sheet = wb.getSheet(project);
+        HSSFSheet sheet = wb.getSheet(src.getName());
         addLang2Tilte(wb, sheet, lang);
 
         HSSFRow titleRow = sheet.getRow(0);
